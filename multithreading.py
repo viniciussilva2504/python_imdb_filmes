@@ -6,16 +6,29 @@ import concurrent.futures
 from bs4 import BeautifulSoup
 import os
 from datetime import datetime
+import logging
+
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('scraping.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
 # global headers to be used for requests
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'}
 
 MAX_THREADS = 20
+REQUEST_TIMEOUT = 30  # Timeout para requests em segundos
 
 def extract_movie_details(movie_link, csv_filename):
     time.sleep(random.uniform(0, 0.2))
     try:
-        response = requests.get(movie_link, headers=headers)
+        response = requests.get(movie_link, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
         movie_soup = BeautifulSoup(response.content, 'html.parser')
 
         if movie_soup is not None:
@@ -101,20 +114,26 @@ def extract_movie_details(movie_link, csv_filename):
                     with open(csv_filename, mode='a', newline='', encoding='utf-8') as file:
                         movie_writer = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
                         if title:
-                            print(f"Extraindo: {title} - {date} - {rating}")
+                            logging.info(f"Extraído: {title} - {date} - {rating}")
                             movie_writer.writerow([title, date, rating, votes, duration, genres, plot_text, director, stars, movie_link])
+                        else:
+                            logging.warning(f"Título não encontrado para: {movie_link}")
+    except requests.exceptions.Timeout:
+        logging.error(f"Timeout ao acessar {movie_link}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Erro de requisição em {movie_link}: {str(e)}")
     except Exception as e:
-        print(f"Erro ao extrair {movie_link}: {str(e)}")
+        logging.error(f"Erro inesperado ao extrair {movie_link}: {str(e)}")
 
 def extract_movies(soup, csv_filename):
     movies_table = soup.find('div', attrs={'data-testid': 'chart-layout-main-column'})
     if not movies_table:
-        print(f"Não foi possível encontrar a tabela de filmes para {csv_filename}")
+        logging.warning(f"Tabela de filmes não encontrada para {csv_filename}")
         return
     
     movies_list = movies_table.find('ul')
     if not movies_list:
-        print(f"Não foi possível encontrar a lista de filmes para {csv_filename}")
+        logging.warning(f"Lista de filmes não encontrada para {csv_filename}")
         return
     
     movies_table_rows = movies_list.find_all('li')
@@ -125,7 +144,7 @@ def extract_movies(soup, csv_filename):
         if link_tag and link_tag.get('href'):
             movie_links.append('https://imdb.com' + link_tag['href'])
     
-    print(f"\nEncontrados {len(movie_links)} filmes para processar em {csv_filename}")
+    logging.info(f"Encontrados {len(movie_links)} filmes para processar em {csv_filename}")
     
     threads = min(MAX_THREADS, len(movie_links))
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
@@ -139,30 +158,33 @@ def create_csv_with_header(filename):
 
 def scrape_category(url, filename, category_name):
     """Faz scraping de uma categoria específica"""
-    print(f"\n{'='*60}")
-    print(f"Iniciando extração: {category_name}")
-    print(f"URL: {url}")
-    print(f"Arquivo: {filename}")
-    print(f"{'='*60}")
+    logging.info(f"{'='*60}")
+    logging.info(f"Iniciando extração: {category_name}")
+    logging.info(f"URL: {url}")
+    logging.info(f"Arquivo: {filename}")
+    logging.info(f"{'='*60}")
     
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
         create_csv_with_header(filename)
         extract_movies(soup, filename)
         
-        print(f"\n✓ Extração concluída para {category_name}!")
+        logging.info(f"✓ Extração concluída para {category_name}!")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"✗ Erro de requisição ao processar {category_name}: {str(e)}")
     except Exception as e:
-        print(f"\n✗ Erro ao processar {category_name}: {str(e)}")
+        logging.error(f"✗ Erro inesperado ao processar {category_name}: {str(e)}")
 
 def main():
     start_time = time.time()
     
-    print("\n" + "="*60)
-    print("INICIANDO EXTRAÇÃO DE DADOS DE FILMES DO IMDB")
-    print(f"Data/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*60)
+    logging.info("="*60)
+    logging.info("INICIANDO EXTRAÇÃO DE DADOS DE FILMES DO IMDB")
+    logging.info(f"Data/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logging.info("="*60)
     
     # Criar pasta para os CSVs se não existir
     output_dir = 'dados_filmes'
@@ -200,11 +222,11 @@ def main():
     
     end_time = time.time()
     
-    print("\n" + "="*60)
-    print("EXTRAÇÃO FINALIZADA COM SUCESSO!")
-    print(f"Tempo total: {end_time - start_time:.2f} segundos")
-    print(f"Arquivos gerados na pasta: {output_dir}")
-    print("="*60 + "\n")
+    logging.info("="*60)
+    logging.info("EXTRAÇÃO FINALIZADA COM SUCESSO!")
+    logging.info(f"Tempo total: {end_time - start_time:.2f} segundos")
+    logging.info(f"Arquivos gerados na pasta: {output_dir}")
+    logging.info("="*60)
 
 if __name__ == '__main__':
     main()
